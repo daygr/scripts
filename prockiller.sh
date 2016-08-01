@@ -95,7 +95,7 @@ fi
 
 if [ "$KILLALL" ]; then
     for j in "$(pgrep $PROCESS)"; do
-        if [ "$(toSeconds "$(ps -p 'etime=' -p "$j")")" -gt "$MAXAGE" ]; then
+        if [ "$(toSeconds "$(ps -o 'etime=' -p "$j")")" -gt "$MAXAGE" ]; then
             kill "$j"
         fi
     done
