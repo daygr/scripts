@@ -13,7 +13,9 @@
 USAGE="Usage: prockiller.sh -a=AGE -p=PROCESS_STRING {-c|-o|-k}"
 #
 # === Changelog
-# 05/30/2016 - added document header and abstracted to_seconds function
+# 2016/08/05 - removed camel case, changed some names around, pgrep -f, added convert_input_age
+# 2016/05/30 - added document header and abstracted to_seconds function
+
 
 PATH=/bin:/usr/bin:/usr/sbin
 
@@ -67,37 +69,60 @@ if [ -z "$MAXAGE" ]; then
     exit 1
 fi
 
+function convert_input_age() {
+    local year="31557600"
+    local day="86400"
+    local hour="3600"
+    local min="60"
+    local age_in="$1"
+    local len=${#age_in}
+    case "$age_in" in
+        *y) echo $((${age_in:0:$len - 1} * $year)) ;;
+        *d) echo $((${age_in:0:$len - 1} * $day)) ;;
+        *h) echo $((${age_in:0:$len - 1} * $hour)) ;;
+        *m) echo $((${age_in:0:$len - 1} * $min));;
+        *) echo $age_in ;;
+    esac
+}
+
+MAXAGE_SECONDS="$(convert_input_age $MAXAGE)"
+
 # Some awk magic to convert the etime format from ps into seconds
-function to_seconds {
+function etime_to_seconds {
     seconds=$(echo "$1" | awk '{ gsub(" |-",":",$0); print }' | awk -F: '{ time=0; m=1  } { for (i=0; i < NF; i++) { seconds += $(NF-i)*m; m *= i >= 2 ? 24 : 60 } } { print seconds }')
     echo "$seconds"
 }
 
-if [ "$COUNT" ]; then
-    procs=0
-    for j in $(pgrep -f "$PROCESS"); do
-        age=$(to_seconds "$(ps -o 'etime=' -p "$j")")
-        if [ "$age" -gt  "$MAXAGE" ]; then
-            let "procs++"
-        fi
-    done
-    echo "$procs"
-    exit 0
-fi
-
-if [ "$KILLOLDEST" ]; then
-    pid_to_kill="$(pgrep -o -f "$PROCESS")"
-    if [ "$(to_seconds "$(ps -o 'etime=' -p "$pid_to_kill")")" -gt "$MAXAGE" ]; then
-        kill "$pid_to_kill"
+main() {
+    if [ "$COUNT" ]; then
+        procs=0
+        for j in $(pgrep -f "$PROCESS"); do
+            age=$(etime_to_seconds "$(ps -o 'etime=' -p "$j")")
+            if [ "$age" -gt  "$MAXAGE_SECONDS" ]; then
+                let "procs++"
+            fi
+        done
+        echo "$procs"
+        exit 0
     fi
-    exit 0
-fi
 
-if [ "$KILLALL" ]; then
-    for j in "$(pgrep -f "$PROCESS")"; do
-        if [ "$(to_seconds "$(ps -o 'etime=' -p "$j")")" -gt "$MAXAGE" ]; then
-            kill "$j"
+    if [ "$KILLOLDEST" ]; then
+        pid_to_kill="$(pgrep -o -f "$PROCESS")"
+        if [ "$(etime_to_seconds "$(ps -o 'etime=' -p "$pid_to_kill")")" -gt "$MAXAGE_SECONDS" ]; then
+            kill "$pid_to_kill"
         fi
-    done
-    exit 0
-fi
+        exit 0
+    fi
+
+    if [ "$KILLALL" ]; then
+        for j in "$(pgrep -f "$PROCESS")"; do
+            if [ "$(etime_to_seconds "$(ps -o 'etime=' -p "$j")")" -gt "$MAXAGE_SECONDS" ]; then
+                kill "$j"
+            fi
+        done
+        exit 0
+    fi
+}
+
+main
+exit 0
