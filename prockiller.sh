@@ -10,15 +10,15 @@
 # Requires: pgrep, awk, ps
 #
 # === Usage
-# prockiller.sh -a AGE -p PROCESS {-c|-o|-k}
+USAGE="Usage: prockiller.sh -a=AGE -p=PROCESS_STRING {-c|-o|-k}"
 #
 # === Changelog
-# 05/30/2016 - added document header and abstracted toSeconds function
+# 05/30/2016 - added document header and abstracted to_seconds function
 
 PATH=/bin:/usr/bin:/usr/sbin
 
 if [ $# -eq 0 ]; then
-    echo "Usage: prockiller.sh -a AGE -p PROCESS {-c|-o|-k}"
+    echo "$USAGE"
 fi
 
 # Get arguments
@@ -68,15 +68,15 @@ if [ -z "$MAXAGE" ]; then
 fi
 
 # Some awk magic to convert the etime format from ps into seconds
-function toSeconds {
+function to_seconds {
     seconds=$(echo "$1" | awk '{ gsub(" |-",":",$0); print }' | awk -F: '{ time=0; m=1  } { for (i=0; i < NF; i++) { seconds += $(NF-i)*m; m *= i >= 2 ? 24 : 60 } } { print seconds }')
     echo "$seconds"
 }
 
 if [ "$COUNT" ]; then
     procs=0
-    for j in $(pgrep "$PROCESS"); do
-        age=$(toSeconds "$(ps -o 'etime=' -p "$j")")
+    for j in $(pgrep -f "$PROCESS"); do
+        age=$(to_seconds "$(ps -o 'etime=' -p "$j")")
         if [ "$age" -gt  "$MAXAGE" ]; then
             let "procs++"
         fi
@@ -86,16 +86,16 @@ if [ "$COUNT" ]; then
 fi
 
 if [ "$KILLOLDEST" ]; then
-    pidToKill="$(pgrep -o "$PROCESS")"
-    if [ "$(toSeconds "$(ps -o 'etime=' -p "$pidToKill")")" -gt "$MAXAGE" ]; then
-        kill "$pidToKill"
+    pid_to_kill="$(pgrep -o -f "$PROCESS")"
+    if [ "$(to_seconds "$(ps -o 'etime=' -p "$pid_to_kill")")" -gt "$MAXAGE" ]; then
+        kill "$pid_to_kill"
     fi
     exit 0
 fi
 
 if [ "$KILLALL" ]; then
-    for j in "$(pgrep $PROCESS)"; do
-        if [ "$(toSeconds "$(ps -o 'etime=' -p "$j")")" -gt "$MAXAGE" ]; then
+    for j in "$(pgrep -f "$PROCESS")"; do
+        if [ "$(to_seconds "$(ps -o 'etime=' -p "$j")")" -gt "$MAXAGE" ]; then
             kill "$j"
         fi
     done
