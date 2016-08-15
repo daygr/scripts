@@ -1,6 +1,6 @@
 #!/bin/bash
 # === Authors
-# Greg Day <gday@cryptic.li>
+# Greg Day <gday@wayfair.com>
 #
 # === Description
 # This script is designed to be able to find processes of a supplied name that
@@ -10,11 +10,9 @@
 # Requires: pgrep, awk, ps
 #
 # === Usage
-USAGE="Usage: prockiller.sh -a=AGE -p=PROCESS_STRING {-c|-o|-k}"
+USAGE="Usage: prockiller.sh -a=AGE -p=PROCESS_STRING [-c] [-o|-k]"
 #
-# === Changelog
-# 2016/08/05 - removed camel case, changed some names around, pgrep -f, added convert_input_age
-# 2016/05/30 - added document header and abstracted to_seconds function
+# Copyright Wayfair 2016 LLC.
 
 
 PATH=/bin:/usr/bin:/usr/sbin
@@ -69,11 +67,13 @@ if [ -z "$MAXAGE" ]; then
     exit 1
 fi
 
+# Sanitize age input and convert to seconds (allows y for year, d for day, h for hour, m for minute, or s for second)
 function convert_input_age() {
     local year="31557600"
     local day="86400"
     local hour="3600"
     local min="60"
+    local second="1"
     local age_in="$1"
     local len=${#age_in}
     case "$age_in" in
@@ -81,6 +81,7 @@ function convert_input_age() {
         *d) echo $((${age_in:0:$len - 1} * $day)) ;;
         *h) echo $((${age_in:0:$len - 1} * $hour)) ;;
         *m) echo $((${age_in:0:$len - 1} * $min));;
+        *s) echo $((${age_in:0:$len - 1} * $second));;
         *) echo $age_in ;;
     esac
 }
