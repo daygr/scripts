@@ -16,12 +16,10 @@ Usage: prockiller.sh [-a=AGE] -p=PROCESS_STRING [-c] [-o|-k]
 If no AGE is supplied, it is assumed to be 0
 
 Arguments:
-    Arguments can be passed in any order.
     Arguments that take a parameter can be passed that parameter with = or ' '
-            i.e. -a=20d or -a 20d
+    i.e. -a=20d or -a 20d
 
 -c|--count       Return the total number of --process older than supplied --age
-                     This count happens before killing any processes
 -o|--killoldest  Kill the oldest matching --process
 -k|--killall     Kill all --process older than supplied --age
 -h|--help        Print this help message
@@ -121,26 +119,40 @@ function etime_to_seconds {
 
 main() {
     if [[ "$COUNT" ]] || [[ "$KILLALL" ]]; then
-        local proclist=("$(pgrep -f "$PROCESS")")
-        for j in $proclist; do
+        proclist=`pgrep -f "$PROCESS"`
+    fi
+    echo $proclist
+
+    for j in "$proclist"; do
+        echo "$j"
+    done
+
+
+    if [ "$COUNT" ]; then
+        local procs=0
+        for j in $(pgrep -f "$PROCESS"); do
             local age=$(etime_to_seconds "$(ps -o 'etime=' -p "$j")")
-            if [[ "$age" -gt  "$MAXAGE_SECONDS" ]]; then
+            if [ "$age" -gt  "$MAXAGE_SECONDS" ]; then
                 let "procs++"
-                if [[ "$KILLALL" ]]; then
-                    kill -9 "$j"
-                fi
             fi
         done
-        if [[ "$COUNT" ]]; then
-            echo "$procs"
-        fi
+        echo "$procs"
     fi
 
-    if [[ "$KILLOLDEST" ]]; then
+    if [ "$KILLOLDEST" ]; then
         local pid_to_kill="$(pgrep -o -f "$PROCESS")"
         if [ "$(etime_to_seconds "$(ps -o 'etime=' -p "$pid_to_kill")")" -gt "$MAXAGE_SECONDS" ]; then
             kill -9 "$pid_to_kill"
         fi
+    fi
+
+    if [ "$KILLALL" ]; then
+        for j in "$(pgrep -f "$PROCESS")"; do
+            local age=$(etime_to_seconds "$(ps -o 'etime=' -p "$j")")
+            if [ "$age" -gt  "$MAXAGE_SECONDS" ]; then
+                kill -9 "$j"
+            fi
+        done
     fi
 }
 
