@@ -122,6 +122,7 @@ function etime_to_seconds {
 main() {
     if [[ "$COUNT" ]] || [[ "$KILLALL" ]]; then
         local proclist=("$(pgrep -f "$PROCESS")")
+        local procs=0
         for j in $proclist; do
             local age=$(etime_to_seconds "$(ps -o 'etime=' -p "$j")")
             if [[ "$age" -gt  "$MAXAGE_SECONDS" ]]; then
