@@ -1,15 +1,13 @@
 #!/bin/bash
 # === Authors
-# Greg Day <gday@wayfair.com>
-# Irena Schashchuk <ishashchuk@wayfair.com>
+# Greg Day <gday@cryptic.li>
 #
 # === Description
 # This script will logout sessions that are idle for more than MAXTIME minutes.
 # This is primarily needed for sessions open in vcenter virtual consoles.
-# It was written for CentOS 7 with BASH, and will likely not work as
-# expected in other environments.
+# It was written for CentOS 7 in bash, and will likely not work as intended
+# in other environments.
 #
-# Copyright Wayfair 2017 LLC.
 
 # Restrict PATH
 PATH=/bin:/usr/bin:/usr/sbin
@@ -22,15 +20,15 @@ readonly MAXTIME=15 # 15 minutes matches SSHD session timeouts
 
 # Set up logging to syslog, also echo to stdout / stderr
 readonly SCRIPT_NAME=$(basename $0)
-log() {
+function log() {
   echo "$@"
   logger -p user.info -t $SCRIPT_NAME "$@"
 }
-warn() {
+function warn() {
   echo "$@"
   logger -p user.warn -t $SCRIPT_NAME "$@"
 }
-err() {
+function err() {
   echo "$@" >&2
   logger -p user.error -t $SCRIPT_NAME "$@"
 }
@@ -38,7 +36,7 @@ err() {
 # Helper function that returns the list of process IDs of login sessions
 # with idle time over 15 minutes
 # The first awk varies with the date format `who` uses
-get_idle_pids() {
+function get_idle_pids() {
     local pid_list=$(
         who -u                | # -u flag prints idle time
         awk '{print $5" "$6}' | # on CentOS, gets idle time and pid
@@ -70,7 +68,7 @@ function safe_kill_pids() {
     return "$exit_code"
 }
 
-main() {
+function main() {
     log "Beginning autologout script"
     safe_kill_pids $(get_idle_pids)
     local pids_failed=$?
