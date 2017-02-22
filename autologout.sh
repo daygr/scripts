@@ -15,7 +15,7 @@
 PATH=/bin:/usr/bin:/usr/sbin
 
 # Set exit on errors
-#set -e
+set -e
 
 # Set maximum time in minutes
 readonly MAXTIME=15 # 15 minutes matches SSHD session timeouts
@@ -41,7 +41,7 @@ err() {
 get_idle_pids() {
     local pid_list=$(
         who -u                | # -u flag prints idle time
-        awk '{print $5" "$6}' | # on CentOS, prints idle time and pid
+        awk '{print $5" "$6}' | # on CentOS, gets idle time and pid
         sed 's/old/99:99/'    | # replace 'old' with arbitrary 99:99 for >24hr
         sed 's/\./00:00/'     | # replace '.' with arbitrary 00:00 for <1 min
         sed 's/ /:/'          | # replace spaces with ':' for next awk line
