@@ -49,7 +49,7 @@ function get_idle_pids() {
     printf "$pid_list"
 }
 
-# Helper function that attempts to send SIGTERM to processes
+# Helper function that attempts to send SIGHUP to processes
 function safe_kill_pids() {
     local exit_code=0
     local pid_list=$@
