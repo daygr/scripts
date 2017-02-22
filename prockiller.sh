@@ -28,7 +28,6 @@ Arguments:
 ENDHELP
 )
 #
-# Copyright Wayfair 2016 LLC.
 
 # Restrict PATH
 PATH=/bin:/usr/bin:/usr/sbin
