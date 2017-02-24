@@ -1,6 +1,6 @@
 #!/bin/bash
-# === Authors
-# Greg Day <gday@cryptic.li>
+# autologout.sh
+# @author Greg Day <gday@cryptic.li>
 #
 # === Description
 # This script will logout sessions that are idle for more than MAXTIME minutes.
@@ -12,23 +12,23 @@
 # Restrict PATH
 PATH=/bin:/usr/bin:/usr/sbin
 
-# Set exit on errors
-set -e
+# Trap errors and report to syslog, then exit
+trap "{ err Internal command error; exit 1 }" ERR
 
 # Set maximum time in minutes
 readonly MAXTIME=15 # 15 minutes matches SSHD session timeouts
 
 # Set up logging to syslog, also echo to stdout / stderr
 readonly SCRIPT_NAME=$(basename $0)
-function log() {
+log() {
   echo "$@"
   logger -p user.info -t $SCRIPT_NAME "$@"
 }
-function warn() {
+warn() {
   echo "$@"
   logger -p user.warn -t $SCRIPT_NAME "$@"
 }
-function err() {
+err() {
   echo "$@" >&2
   logger -p user.error -t $SCRIPT_NAME "$@"
 }
@@ -36,7 +36,7 @@ function err() {
 # Helper function that returns the list of process IDs of login sessions
 # with idle time over 15 minutes
 # The first awk varies with the date format `who` uses
-function get_idle_pids() {
+get_idle_pids() {
     local pid_list=$(
         who -u                | # -u flag prints idle time
         awk '{print $5" "$6}' | # on CentOS, gets idle time and pid
@@ -50,15 +50,13 @@ function get_idle_pids() {
 }
 
 # Helper function that attempts to send SIGHUP to processes
-function safe_kill_pids() {
+safe_kill_pids() {
     local exit_code=0
     local pid_list=$@
-    for pid in $pid_list
-    do
+    for pid in $pid_list; do
         warn "Sending SIGHUP to login shell with pid $pid"
         timeout 10 kill -HUP $pid
-        if [[ "$?" -ne "0" ]]
-        then
+        if [[ "$?" -ne "0" ]]; then
             let "exit_code+=1"
             err "Login shell with pid $pid did not respond to SIGHUP"
         else
@@ -68,12 +66,11 @@ function safe_kill_pids() {
     return "$exit_code"
 }
 
-function main() {
+main() {
     log "Beginning autologout script"
     safe_kill_pids $(get_idle_pids)
     local pids_failed=$?
-    if [[ "$pids_failed" -ne "0" ]]
-    then
+    if [[ "$pids_failed" -ne "0" ]]; then
         err "Autologout script failed to kill $pids_failed pids"
         return 1
     else
