@@ -1,8 +1,6 @@
 #!/bin/bash
-# === Authors
-# Greg Day <gday@wayfair.com>
+# @author Greg Day <gday@cryptic.li>
 #
-# === Description
 # This script is designed to be able to find processes of a supplied name that
 # are older than a supplied age, in seconds. It is a bash script so portability
 # is not guaranteed. It is designed to be called by Zabbix and will only return
@@ -32,7 +30,7 @@ ENDHELP
 # Restrict PATH
 PATH=/bin:/usr/bin:/usr/sbin
 
-if [ $# -eq 0 ]; then
+if [[ "$#" -eq 0 ]]; then
     echo "$HELPMSG"
     exit 0
 fi
@@ -77,17 +75,17 @@ do
     esac
 done
 
-if [ "$HELP" ]; then
+if [[ "$HELP" ]]; then
     echo "$HELPMSG"
     exit 0
 fi
-if [ -z "$PROCESS" ]; then
+if [[ -z "$PROCESS" ]]; then
     echo "--process is required"
     exit 1
 fi
 
 # If no age supplied, set age to 0, catching all processes
-if [ -z "$MAXAGE" ]; then
+if [[ -z "$MAXAGE" ]]; then
     MAXAGE=0
 fi
 
@@ -114,7 +112,11 @@ MAXAGE_SECONDS="$(convert_input_age "$MAXAGE")"
 
 # Some awk magic to convert the etime format from ps into seconds
 function etime_to_seconds {
-    seconds=$(echo "$1" | awk '{ gsub(" |-",":",$0); print }' | awk -F: '{ time=0; m=1  } { for (i=0; i < NF; i++) { seconds += $(NF-i)*m; m *= i >= 2 ? 24 : 60 } } { print seconds }')
+    seconds=$(
+        echo "$1" |
+        awk '{ gsub(" |-",":",$0); print }' |
+        awk -F: '{ time=0; m=1  } { for (i=0; i < NF; i++) { seconds += $(NF-i)*m; m *= i >= 2 ? 24 : 60 } } { print seconds }'
+        )
     echo "$seconds"
 }
 
