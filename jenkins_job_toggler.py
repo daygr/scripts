@@ -80,11 +80,11 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.mode == "enable":
+    if args.mode == "disable":
         __enable(args.jobdir, args.jobfile)
         print("Saved toggled jobs to {}".format(args.jobfile))
 
-    if args.mode == "disable":
+    if args.mode == "enable":
         __disable(args.jobdir, args.jobfile)
         print("Toggled jobs from {}".format(args.jobfile))
 
