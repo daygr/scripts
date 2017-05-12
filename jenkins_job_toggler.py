@@ -5,68 +5,66 @@ import os
 import os.path
 import fileinput
 
-try:
-  from lxml import etree
-  print("running with lxml.etree")
-except ImportError:
-  try:
-    # Python 2.5
-    import xml.etree.cElementTree as etree
-    print("running with cElementTree on Python 2.5+")
-  except ImportError:
-    try:
-      # Python 2.5
-      import xml.etree.ElementTree as etree
-      print("running with ElementTree on Python 2.5+")
-    except ImportError:
-      try:
-        # normal cElementTree install
-        import cElementTree as etree
-        print("running with cElementTree")
-      except ImportError:
-        try:
-          # normal ElementTree install
-          import elementtree.ElementTree as etree
-          print("running with ElementTree")
-        except ImportError:
-          print("Failed to import ElementTree from any known place")
-
-
-def __disable(jobs_directory, jobs_file):
-    print("DISABLE mode, jobs_directory is {} and jobs_file is {}".format(jobs_directory, jobs_file))
+def _disable(jobs_directory, jobs_file, verbose):
+    if verbose:
+        print("DISABLE mode, jobs_directory is {} and jobs_file is {}".format(jobs_directory, jobs_file))
 
     jobfile = open(jobs_file, 'w')
 
     for job in os.listdir(jobs_directory):
-        configfile = jobs_directory + "/" + job + "/config.xml"
-        tree = etree.parse(configfile)
-        root = tree.getroot()
-        disabled = root.xpath("//disabled")
-        if disabled[0].text == 'false':
-            jobfile.write(job + "\n")
-            with fileinput.FileInput(configfile, inplace=True, backup='.bak') as file:
-                for line in file:
-                    print(line.replace("<disabled>false</disabled>", "<disabled>true</disabled>").rstrip())
+        job = job.strip()
+        try:
+            configfile = jobs_directory + "/" + job.strip() + "/config.xml"
+            disabled = 'true'
+            if "<disabled>false</disabled>" in open(configfile).read():
+                disabled = 'false'
+                if verbose:
+                    print("{} is enabled.".format(job))
+            elif "<disabled>true</disabled>" in open(configfile).read():
+                if verbose:
+                    print("{} is disabled.".format(job))
 
-#            disabled[0].text = 'true'
-#            etree.ElementTree(root).write(newconfigfile, encoding="utf-8",
-#                                          xml_declaration=True, method="html",
-#                                          )
+            if disabled == 'false':
+                if verbose:
+                    print("Disabling job {}, writing backup to {}.bak".format(job, configfile))
+                with fileinput.FileInput(configfile, inplace=True, backup='.bak') as file:
+                    for line in file:
+                        print(line.replace("<disabled>false</disabled>", "<disabled>true</disabled>").rstrip())
+                if verbose:
+                    print("Writing job {} to {}".format(job, jobs_file))
+                jobfile.write(job + "\n")
 
-    jobfile.close()
-
-def __enable(jobs_directory, jobs_file):
-    print("ENABLE mode, jobs_directory is {} and jobs_file is {}".format(jobs_directory, jobs_file))
-
-    jobfile = open(jobs_file, 'r')
-
-    for job in jobfile:
-        configfile = jobs_directory + "/" + job.strip() + "/config.xml"
-        with fileinput.FileInput(configfile, inplace=True, backup='.restore') as file:
-            for line in file:
-                print(line.replace("<disabled>true</disabled>", "<disabled>false</disabled>").rstrip())
+        except IOError:
+            print("Error: job {} does not seem to have a config file.".format(job))
+            continue
 
     jobfile.close()
+
+def _enable(jobs_directory, jobs_file, verbose):
+    if verbose:
+        print("ENABLE mode, jobs_directory is {} and jobs_file is {}".format(jobs_directory, jobs_file))
+
+    try:
+        jobfile = open(jobs_file, 'r')
+        for job in jobfile:
+            job = job.strip()
+            try:
+                configfile = jobs_directory + "/" + job + "/config.xml"
+                if verbose:
+                    print("Config file is {}".format(configfile))
+                    print("Enabling job {}, writing backup to {}.restore".format(job, configfile))
+                with fileinput.FileInput(configfile, inplace=True, backup='.restore') as file:
+                    for line in file:
+                        print(line.replace("<disabled>true</disabled>", "<disabled>false</disabled>").rstrip())
+
+            except IOError:
+                print("Error: job {} does not seem to have a config file.".format(job))
+                continue
+
+        jobfile.close()
+
+    except IOError:
+        print("Error: provided jobs file does not appear to exist- {}".format(jobs_file))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -77,14 +75,18 @@ if __name__ == '__main__':
     parser.add_argument("-f", "--jobfile",
                         help="Path to file used to store job info.",
                         default="./toggled_jobs.list")
+    parser.add_argument("-v", "--verbose", help="Ask for verbosity.",
+                        action='store_true')
 
     args = parser.parse_args()
 
     if args.mode == "disable":
-        __enable(args.jobdir, args.jobfile)
-        print("Saved toggled jobs to {}".format(args.jobfile))
+        _disable(args.jobdir, args.jobfile, args.verbose)
+        if args.verbose:
+            print("Saved disabled jobs to {}".format(args.jobfile))
 
     if args.mode == "enable":
-        __disable(args.jobdir, args.jobfile)
-        print("Toggled jobs from {}".format(args.jobfile))
+        _enable(args.jobdir, args.jobfile, args.verbose)
+        if args.verbose:
+            print("Enabled jobs from {}".format(args.jobfile))
 
