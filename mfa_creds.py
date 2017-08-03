@@ -11,17 +11,18 @@ import ConfigParser
 
 from dateutil.parser import parse
 
-def _savecfg(config_file, parser):
+def _savecfg(config_file, parser, quiet):
 
     try:
         with open(config_file, 'wb') as cfg:
             parser.write(cfg)
     except EnvironmentError:
-        sys.stdout.write('       [\033[91mERROR\033[0m]\n')
+        if not quiet:
+            sys.stdout.write('       [\033[91mERROR\033[0m]\n')
         sys.stderr.write('Error: %s\n' % stderr.strip())
         sys.exit(1)
 
-def _getcreds(token, duration):
+def _getcreds(token, duration, quiet):
 
     # Set config file
     home_dir = os.path.expanduser('~')
@@ -33,15 +34,17 @@ def _getcreds(token, duration):
         sys.exit(1)
 
     # Parse the AWS credentials file
-    sys.stdout.write('Parsing the ~/.aws/credentials file...')
-    sys.stdout.flush()
+    if not quiet:
+        sys.stdout.write('Parsing the ~/.aws/credentials file...')
+        sys.stdout.flush()
 
     parser = ConfigParser.SafeConfigParser()
     parser.read(config_file)
 
-    sys.stdout.write('                     [\033[92mOK\033[0m]\n')
-    sys.stdout.write('Writing default access key to/from my-keys section...')
-    sys.stdout.flush()
+    if not quiet:
+        sys.stdout.write('                     [\033[92mOK\033[0m]\n')
+        sys.stdout.write('Writing default access key to/from my-keys section...')
+        sys.stdout.flush()
 
     # Install default key. First run, will copy default key to my-keys instead
     try:
@@ -61,10 +64,12 @@ def _getcreds(token, duration):
                    'aws_secret_access_key',
                    parser.get('default', 'aws_secret_access_key'))
 
-    _savecfg(config_file, parser)
+    _savecfg(config_file, parser, quiet)
 
-    sys.stdout.write('      [\033[92mOK\033[0m]\n')
-    sys.stdout.write('Looking up user and account info with AWS CLI...')
+    if not quiet:
+        sys.stdout.write('      [\033[92mOK\033[0m]\n')
+        sys.stdout.write('Looking up user and account info with AWS CLI...')
+        sys.stdout.flush()
 
     stdout, stderr = subprocess.Popen(
         [
@@ -79,13 +84,15 @@ def _getcreds(token, duration):
     try:
         cli_output = json.loads(stdout)
     except ValueError:
-        sys.stdout.write('           [\033[91mERROR\033[0m]\n')
+        if not quiet:
+            sys.stdout.write('           [\033[91mERROR\033[0m]\n')
         sys.stderr.write('Error: %s\n' % stderr.strip())
         sys.exit(1)
 
-    sys.stdout.write('           [\033[92mOK\033[0m]\n')
-    sys.stdout.write('Getting security token with STS API...')
-    sys.stdout.flush()
+    if not quiet:
+        sys.stdout.write('           [\033[92mOK\033[0m]\n')
+        sys.stdout.write('Getting security token with STS API...')
+        sys.stdout.flush()
 
     stdout, stderr = subprocess.Popen(
         [
@@ -106,13 +113,15 @@ def _getcreds(token, duration):
     try:
         mfa_session = json.loads(stdout)
     except ValueError:
-        sys.stdout.write('                     [\033[91mERROR\033[0m]\n')
+        if not quiet:
+            sys.stdout.write('                     [\033[91mERROR\033[0m]\n')
         sys.stderr.write('Error: %s\n' % stderr.strip())
         sys.exit(1)
 
-    sys.stdout.write('                     [\033[92mOK\033[0m]\n')
-    sys.stdout.write('Saving final creds in the ~/.aws/credentials file... ')
-    sys.stdout.flush()
+    if not quiet:
+        sys.stdout.write('                     [\033[92mOK\033[0m]\n')
+        sys.stdout.write('Saving final creds in the ~/.aws/credentials file... ')
+        sys.stdout.flush()
 
     # Install the new credentials
     parser.set('default',
@@ -125,14 +134,15 @@ def _getcreds(token, duration):
                'aws_security_token',
                mfa_session['Credentials']['SessionToken'])
 
-    _savecfg(config_file, parser)
+    _savecfg(config_file, parser, quiet)
 
-    sys.stdout.write('      [\033[92mOK\033[0m]\n')
-    sys.stdout.write(
-        'Success. Your token expires at {} (UTC)\n'.format(
-            parse(
-                mfa_session['Credentials']['Expiration'])))
-    sys.stdout.flush()
+    if not quiet:
+        sys.stdout.write('      [\033[92mOK\033[0m]\n')
+        sys.stdout.write(
+            'Success. Your token expires at {} (UTC)\n'.format(
+                parse(
+                    mfa_session['Credentials']['Expiration'])))
+        sys.stdout.flush()
 
 if __name__ == '__main__':
 
@@ -143,6 +153,8 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--duration', type=int, default='43200',
                         help='Duration of token in seconds, from 900 \
                         (15 minutes) to 129600 (36 hours)')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Suppress standard output')
 
     args = parser.parse_args()
 
@@ -154,4 +166,4 @@ if __name__ == '__main__':
         sys.stderr.write('Err: Duration must be from 900 to 129000 seconds\n')
         sys.exit(1)
 
-    _getcreds(args.token, args.duration)
+    _getcreds(args.token, args.duration, args.quiet)
