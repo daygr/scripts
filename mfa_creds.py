@@ -18,6 +18,7 @@ def _savecfg(config_file, parser):
             parser.write(cfg)
     except EnvironmentError:
         sys.stdout.write('       [\033[91mERROR\033[0m]\n')
+        sys.stderr.write('Error: %s\n' % stderr.strip())
         sys.exit(1)
 
 def _getcreds(token, duration):
@@ -79,6 +80,7 @@ def _getcreds(token, duration):
         cli_output = json.loads(stdout)
     except ValueError:
         sys.stdout.write('           [\033[91mERROR\033[0m]\n')
+        sys.stderr.write('Error: %s\n' % stderr.strip())
         sys.exit(1)
 
     sys.stdout.write('           [\033[92mOK\033[0m]\n')
