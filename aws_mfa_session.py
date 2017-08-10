@@ -33,7 +33,7 @@ def _getcreds(token, duration):
     # Parse the AWS credentials file
     flush_msg('Parsing the ~/.aws/credentials file...')
 
-    parser = ConfigParser.SafeConfigParser()
+    parser = ConfigParser.RawConfigParser()
     parser.read(config_file)
 
     flush_msg('                     [\033[92mOK\033[0m]\n')
