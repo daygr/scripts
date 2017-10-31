@@ -66,7 +66,26 @@ def _getcreds(token, duration):
         [
             'aws',
             'iam',
+            'get-user',
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).communicate()
+
+    try:
+        user_info = json.loads(stdout)
+    except ValueError:
+        flush_msg('           [\033[91mERROR\033[0m]\n')
+        sys.stderr.write('Error: %s\n' % stderr.strip())
+        sys.exit(1)
+
+    stdout, stderr = subprocess.Popen(
+        [
+            'aws',
+            'iam',
             'list-mfa-devices',
+            '--user-name',
+            str(user_info['User']['UserName']),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
