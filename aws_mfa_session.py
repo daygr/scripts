@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import argparse
 import json
 import os
@@ -10,137 +9,184 @@ import ConfigParser
 from dateutil.parser import parse
 
 def _savecfg(config_file, parser):
-
+    # Writes a provided config file to disk
     try:
         with open(config_file, 'wb') as cfg:
             parser.write(cfg)
-    except EnvironmentError:
-        flush_msg('       [\033[91mERROR\033[0m]\n')
-        sys.stderr.write('Error: %s\n' % stderr.strip())
+    except EnvironmentError as e:
+        flush_msg('[\033[91mERROR\033[0m]\n')
+        sys.stderr.write('Error: %s\n' % e.strip())
         sys.exit(1)
 
-def _getcreds(token, duration):
+def _revert_changes(profile, profile_backup, config_file, parser):
+    # Reverts moving the permanent key into the profile
+    if parser.has_section(profile_backup):
+        flush_msg('Reverting changes to ~/.aws/credentials...             ')
+        parser.set(profile,
+                'aws_access_key_id',
+                parser.get(profile_backup, 'aws_access_key_id'))
+        parser.set(profile,
+                'aws_secret_access_key',
+                parser.get(profile_backup, 'aws_secret_access_key'))
+        parser.set(profile,
+                'aws_security_token',
+                parser.get(profile_backup, 'aws_security_token'))
+        _savecfg(config_file, parser)
+        flush_msg('[\033[92mOK\033[0m]\n')
+    sys.exit(1)
 
-    # Set config file
+def _awscmd(command, profile):
+    # Runs an aws cli command with subprocess and returns the output
+
+    # Always return json
+    command.append('--output')
+    command.append('json')
+
+    # Use the provided profile
+    command.append('--profile')
+    command.append(profile)
+
+    stdout, stderr = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).communicate()
+
+    try:
+        output = json.loads(stdout)
+        return output
+    except ValueError as e:
+        flush_msg('[\033[91mERROR\033[0m]\n')
+        sys.stderr.write('Error: %s\n' % stderr.strip())
+        raise e
+
+def _getcreds(token, duration, profile):
+
+    # Set up profile strings
+    profile_permanent = profile + '-permanent'
+    profile_backup = profile + '-mfabackup'
+
+    # Set config file (hardcoded because AWS)
     home_dir = os.path.expanduser('~')
     config_file = os.path.join(home_dir, '.aws', 'credentials')
-    # Make sure ~/.aws/credentials exists
 
+    # Make sure ~/.aws/credentials exists
     if not os.path.isfile(config_file):
         sys.stderr.write('Error: File ~/.aws/credentials does not exist\n')
         sys.exit(1)
 
     # Parse the AWS credentials file
-    flush_msg('Parsing the ~/.aws/credentials file...')
-
+    flush_msg('Parsing the ~/.aws/credentials file...                 ')
     parser = ConfigParser.RawConfigParser()
     parser.read(config_file)
+    flush_msg('[\033[92mOK\033[0m]\n')
 
-    flush_msg('                     [\033[92mOK\033[0m]\n')
-    flush_msg('Writing default access key to/from my-keys section...')
-
-    # Install default key. First run, will copy default key to my-keys instead
+    flush_msg('Setting up permanent key in correct profile section... ')
+    # Install the correct key. First run, will copy permanent keys to
+    # [profile-permanent]
     try:
-        parser.set('default',
-                   'aws_access_key_id',
-                   parser.get('my-keys', 'aws_access_key_id'))
-        parser.set('default',
-                   'aws_secret_access_key',
-                   parser.get('my-keys', 'aws_secret_access_key'))
-        parser.remove_option('default', 'aws_security_token')
-    except ConfigParser.NoSectionError:
-        parser.add_section('my-keys')
-        parser.set('my-keys',
-                   'aws_access_key_id',
-                   parser.get('default', 'aws_access_key_id'))
-        parser.set('my-keys',
-                   'aws_secret_access_key',
-                   parser.get('default', 'aws_secret_access_key'))
+        # backup existing security token in case getting a new session fails
+        if parser.has_option(profile, 'aws_security_token'):
+            # This does not throw an exception
+            parser.remove_section(profile_backup)
+            parser.add_section(profile_backup)
+            parser.set(profile_backup,
+                    'aws_access_key_id',
+                    parser.get(profile, 'aws_access_key_id'))
+            parser.set(profile_backup,
+                    'aws_secret_access_key',
+                    parser.get(profile, 'aws_secret_access_key'))
+            parser.set(profile_backup,
+                    'aws_security_token',
+                    parser.get(profile, 'aws_security_token'))
 
+        parser.set(profile,
+                   'aws_access_key_id',
+                   parser.get(profile_permanent, 'aws_access_key_id'))
+        parser.set(profile,
+                   'aws_secret_access_key',
+                   parser.get(profile_permanent, 'aws_secret_access_key'))
+        # This does not throw an exception
+        parser.remove_option(profile, 'aws_security_token')
+    # First-run, copy the profile to profile_permanent
+    # Gets here if either profile-permanent or profile do not exist
+    except ConfigParser.NoSectionError:
+        if parser.has_section(profile):
+            parser.add_section(profile_permanent)
+            parser.set(profile_permanent,
+                    'aws_access_key_id',
+                    parser.get(profile, 'aws_access_key_id'))
+            parser.set(profile_permanent,
+                    'aws_secret_access_key',
+                    parser.get(profile, 'aws_secret_access_key'))
+        else:
+            flush_msg('[\033[91mERROR\033[0m]\n')
+            flush_msg('The profile: [%s] does not exist in the config file.\n' % profile)
+            sys.exit(1)
+
+    # Write changes. From here must revert if error occurs.
     _savecfg(config_file, parser)
 
-    flush_msg('      [\033[92mOK\033[0m]\n')
-    flush_msg('Looking up user and account info with AWS CLI...')
-
-    stdout, stderr = subprocess.Popen(
-        [
-            'aws',
-            'iam',
-            'get-user',
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    ).communicate()
+    flush_msg('[\033[92mOK\033[0m]\n')
+    flush_msg('Looking up user and account info with AWS CLI...       ')
 
     try:
-        user_info = json.loads(stdout)
-    except ValueError:
-        flush_msg('           [\033[91mERROR\033[0m]\n')
-        sys.stderr.write('Error: %s\n' % stderr.strip())
-        sys.exit(1)
-
-    stdout, stderr = subprocess.Popen(
-        [
-            'aws',
-            'iam',
-            'list-mfa-devices',
-            '--user-name',
-            str(user_info['User']['UserName']),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    ).communicate()
+        user_info = _awscmd(['aws', 'iam', 'get-user'], profile)
+    except:
+        _revert_changes(profile, profile_backup, config_file, parser)
 
     try:
-        cli_output = json.loads(stdout)
-    except ValueError:
-        flush_msg('           [\033[91mERROR\033[0m]\n')
-        sys.stderr.write('Error: %s\n' % stderr.strip())
-        sys.exit(1)
+        cli_output = _awscmd(
+            [
+                'aws',
+                'iam',
+                'list-mfa-devices',
+                '--user-name',
+                str(user_info['User']['UserName']),
+            ],
+            profile
+        )
+    except:
+        _revert_changes(profile, profile_backup, config_file, parser)
 
-    flush_msg('           [\033[92mOK\033[0m]\n')
-    flush_msg('Getting security token with STS API...')
-
-    stdout, stderr = subprocess.Popen(
-        [
-            'aws',
-            'sts',
-            'get-session-token',
-            '--serial-number',
-            str(cli_output['MFADevices'][0]['SerialNumber']),
-            '--token-code',
-            str(token),
-            '--duration-seconds',
-            str(duration),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    ).communicate()
+    flush_msg('[\033[92mOK\033[0m]\n')
+    flush_msg('Getting security token with STS API...                 ')
 
     try:
-        mfa_session = json.loads(stdout)
-    except ValueError:
-        flush_msg('                     [\033[91mERROR\033[0m]\n')
-        sys.stderr.write('Error: %s\n' % stderr.strip())
-        sys.exit(1)
+        mfa_session = _awscmd(
+            [
+                'aws',
+                'sts',
+                'get-session-token',
+                '--serial-number',
+                str(cli_output['MFADevices'][0]['SerialNumber']),
+                '--token-code',
+                str(token),
+                '--duration-seconds',
+                str(duration),
+            ],
+            profile
+        )
+    except:
+        _revert_changes(profile, profile_backup, config_file, parser)
 
-    flush_msg('                     [\033[92mOK\033[0m]\n')
-    flush_msg('Saving final creds in the ~/.aws/credentials file... ')
+    flush_msg('[\033[92mOK\033[0m]\n')
+    flush_msg('Saving final creds in the ~/.aws/credentials file...   ')
 
     # Install the new credentials
-    parser.set('default',
+    parser.set(profile,
                'aws_access_key_id',
                mfa_session['Credentials']['AccessKeyId'])
-    parser.set('default',
+    parser.set(profile,
                'aws_secret_access_key',
                mfa_session['Credentials']['SecretAccessKey'])
-    parser.set('default',
+    parser.set(profile,
                'aws_security_token',
                mfa_session['Credentials']['SessionToken'])
 
     _savecfg(config_file, parser)
 
-    flush_msg('      [\033[92mOK\033[0m]\n')
+    flush_msg('[\033[92mOK\033[0m]\n')
     flush_msg(
         'Success. Your token expires at {} (UTC)\n'.format(
             parse(
@@ -152,17 +198,17 @@ if __name__ == '__main__':
         description='A script to automate getting AWS CLI Multi-Factor \
         Authentication session tokens. \
         Assumes that you already have ~/.aws/credentials \
-        and ~/.aws/config in place with your account information configured,\
-        and that you have MFA enabled for your IAM user.\
-        If you have manually inserted an MFA Session Token previously,\
-        make sure that your non-ephemeral access key and id are set either\
-        in the [default] or [my-keys] section of your credentials file.\
-        The script will copy [default] to [my-keys] if it does not exist.')
+        and ~/.aws/config in place with the correct information configured,\
+        and that you have MFA enabled for your IAM user.' )
     parser.add_argument('-t', '--token', type=str, required=True,
-                        help='MFA token from device')
+                        help='6-digit MFA token from device')
     parser.add_argument('-d', '--duration', type=int, default='43200',
-                        help='Duration of token in seconds, from 900 \
-                        (15 minutes) to 129600 (36 hours)')
+                        help='Duration of session in seconds, \
+                        from 900 (15 minutes) to 129600 (36 hours). \
+                        Default is 43200 (12 hours)')
+    parser.add_argument('-p', '--profile', type=str, default='default',
+                        help='Config profile to use for AWS commands. \
+                        Default is "default"')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='Suppress standard output')
 
@@ -184,4 +230,4 @@ if __name__ == '__main__':
         def flush_msg(output):
             pass
 
-    _getcreds(args.token, args.duration)
+    _getcreds(args.token, args.duration, args.profile)
