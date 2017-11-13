@@ -1,0 +1,66 @@
+#!/bin/bash
+# A script that implements 'exponential backoff', primarily designed to
+# call aws cli commands that have dynamic throttle and request limits.
+#
+# A couple of notes
+# - The output will mix stderr and stdout, if the command sent to it
+# writes to both, but will send everything to stderr if the command
+# actually fails. This may not be something you want.
+# - Sending a command to the while loop must pass through one layer
+# of bash quoting before it hits this script, so you must escape
+# the usage of such things as `` and (), or single-quote to prevent
+# bash interpolation.
+# - Currently, the exception list is hardcoded, meaning, if there is
+# no elif line below to handle searching for the exception in the
+# output, that exception will not be caught and the command will not
+# retry. It will, however, run the first time correctly.
+# If the output of stderr is complicated and the exception is not in
+# the first line, the regex MAY miss it.
+# - Output is not flushed until a command completes successfully,
+# so commands that have a dynamic output (such as s3 commands) will
+# only print an output on success (or failure).
+#
+# The maximum default time a command will take is 2^10 - 1 plus
+# however long the command sent took to fail. This means 17 minutes
+# and 3 seconds, plus the failure time (which is usually tiny).
+# To find the max time for a different BACKOFFATTEMPTS and
+# BACKOFFTIMEOUT value, calculate:
+#   (2^BACKOFFATTEMPTS) * (BACKOFFTIMEOUT) - (BACKOFFTIMEOUT)
+
+max_attempts=${BACKOFFATTEMPTS-10}
+timeout=${BACKOFFTIMEOUT-1}
+attempt=0
+exitcode=0
+
+# set +e to allow commands to fail
+set +e
+while [[ "$attempt" -lt "$max_attempts" ]]; do
+  # save stdout and stderr to output
+  output=$(eval $@ 2>&1)
+  exitcode="$?"
+  if [[ "$exitcode" == 0 ]]; then
+    break
+  fi
+
+  # 'catch' specific errors
+  if   [[ "${output}" =~ "ThrottlingException" ]]; then
+    true
+  elif [[ "${output}" =~ "RequestLimitExceeded" ]]; then
+    true
+  else
+    break
+  fi
+
+  sleep $timeout
+  attempt=$(( attempt + 1 ))
+  timeout=$(( timeout * 2 ))
+done
+set -e
+
+if [[ "$exitcode" != 0 ]]; then
+  >&2 echo "$output"
+  exit $exitcode
+else
+  echo "$output"
+  exit $exitcode
+fi
