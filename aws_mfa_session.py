@@ -4,14 +4,17 @@ import json
 import os
 import subprocess
 import sys
-import ConfigParser
+try:
+    import configparser
+except ImportError:
+    import ConfigParser as configparser
 
 from dateutil.parser import parse
 
 def _savecfg(config_file, parser):
     # Writes a provided config file to disk
     try:
-        with open(config_file, 'wb') as cfg:
+        with open(config_file, 'w') as cfg:
             parser.write(cfg)
     except EnvironmentError as e:
         flush_msg('[\033[91mERROR\033[0m]\n')
@@ -21,7 +24,7 @@ def _savecfg(config_file, parser):
 def _revert_changes(profile, profile_backup, config_file, parser):
     # Reverts moving the permanent key into the profile
     if parser.has_section(profile_backup):
-        flush_msg('Reverting changes to ~/.aws/credentials...             ')
+        flush_msg('Reverting changes to credentials file...               ')
         parser.set(profile,
                 'aws_access_key_id',
                 parser.get(profile_backup, 'aws_access_key_id'))
@@ -29,8 +32,8 @@ def _revert_changes(profile, profile_backup, config_file, parser):
                 'aws_secret_access_key',
                 parser.get(profile_backup, 'aws_secret_access_key'))
         parser.set(profile,
-                'aws_security_token',
-                parser.get(profile_backup, 'aws_security_token'))
+                'aws_session_token',
+                parser.get(profile_backup, 'aws_session_token'))
         _savecfg(config_file, parser)
         flush_msg('[\033[92mOK\033[0m]\n')
     sys.exit(1)
@@ -66,18 +69,21 @@ def _getcreds(token, duration, profile):
     profile_permanent = profile + '-permanent'
     profile_backup = profile + '-mfabackup'
 
-    # Set config file (hardcoded because AWS)
-    home_dir = os.path.expanduser('~')
-    config_file = os.path.join(home_dir, '.aws', 'credentials')
+    # Set config file
+    if "AWS_SHARED_CREDENTIALS_FILE" in os.environ:
+        config_file = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
+    else:
+        home_dir = os.path.expanduser('~')
+        config_file = os.path.join(home_dir, '.aws', 'credentials')
 
-    # Make sure ~/.aws/credentials exists
+    # Make sure credentials file exists
     if not os.path.isfile(config_file):
-        sys.stderr.write('Error: File ~/.aws/credentials does not exist\n')
+        sys.stderr.write('Error: File %s does not exist\n' % config_file)
         sys.exit(1)
 
-    # Parse the AWS credentials file
-    flush_msg('Parsing the ~/.aws/credentials file...                 ')
-    parser = ConfigParser.RawConfigParser()
+    # Parse the credentials file
+    flush_msg('Parsing credentials file...                            ')
+    parser = configparser.RawConfigParser()
     parser.read(config_file)
     flush_msg('[\033[92mOK\033[0m]\n')
 
@@ -86,7 +92,7 @@ def _getcreds(token, duration, profile):
     # [profile-permanent]
     try:
         # backup existing security token in case getting a new session fails
-        if parser.has_option(profile, 'aws_security_token'):
+        if parser.has_option(profile, 'aws_session_token'):
             # This does not throw an exception
             parser.remove_section(profile_backup)
             parser.add_section(profile_backup)
@@ -97,9 +103,10 @@ def _getcreds(token, duration, profile):
                     'aws_secret_access_key',
                     parser.get(profile, 'aws_secret_access_key'))
             parser.set(profile_backup,
-                    'aws_security_token',
-                    parser.get(profile, 'aws_security_token'))
+                    'aws_session_token',
+                    parser.get(profile, 'aws_session_token'))
 
+        # Get the profile_permanent section and put it in profile
         parser.set(profile,
                    'aws_access_key_id',
                    parser.get(profile_permanent, 'aws_access_key_id'))
@@ -107,18 +114,28 @@ def _getcreds(token, duration, profile):
                    'aws_secret_access_key',
                    parser.get(profile_permanent, 'aws_secret_access_key'))
         # This does not throw an exception
-        parser.remove_option(profile, 'aws_security_token')
-    # First-run, copy the profile to profile_permanent
-    # Gets here if either profile-permanent or profile do not exist
-    except ConfigParser.NoSectionError:
+        parser.remove_option(profile, 'aws_session_token')
+        parser.remove_option(profile, 'aws_security_token') # deprecated
+
+    # Copy the profile to profile_permanent
+    # Gets here if either profile_permanent or profile does not exist
+    except configparser.NoSectionError:
         if parser.has_section(profile):
-            parser.add_section(profile_permanent)
-            parser.set(profile_permanent,
-                    'aws_access_key_id',
-                    parser.get(profile, 'aws_access_key_id'))
-            parser.set(profile_permanent,
-                    'aws_secret_access_key',
-                    parser.get(profile, 'aws_secret_access_key'))
+            if parser.get(profile, 'aws_access_key_id')[0:2] == "AK":
+                parser.remove_section(profile_permanent)
+                parser.add_section(profile_permanent)
+                parser.set(profile_permanent,
+                           'aws_access_key_id',
+                           parser.get(profile, 'aws_access_key_id'))
+                parser.set(profile_permanent,
+                           'aws_secret_access_key',
+                           parser.get(profile, 'aws_secret_access_key'))
+            else:
+                flush_msg('[\033[91mERROR\033[0m]\n')
+                flush_msg('The profile: [%s] does not seem to contain a longterm key\n' % profile)
+                flush_msg('and [%s] does not exist...\n' % profile_permanent)
+                flush_msg('Check your credentials file: %s\n' % config_file)
+                sys.exit(1)
         else:
             flush_msg('[\033[91mERROR\033[0m]\n')
             flush_msg('The profile: [%s] does not exist in the config file.\n' % profile)
@@ -171,9 +188,18 @@ def _getcreds(token, duration, profile):
         _revert_changes(profile, profile_backup, config_file, parser)
 
     flush_msg('[\033[92mOK\033[0m]\n')
-    flush_msg('Saving final creds in the ~/.aws/credentials file...   ')
+    flush_msg('Saving final creds in the credentials file...          ')
 
     # Install the new credentials
+    if parser.get(profile, 'aws_access_key_id')[0:2] == "AK":
+        parser.remove_section(profile_permanent)
+        parser.add_section(profile_permanent)
+        parser.set(profile_permanent,
+                'aws_access_key_id',
+                parser.get(profile, 'aws_access_key_id'))
+        parser.set(profile_permanent,
+                'aws_secret_access_key',
+                parser.get(profile, 'aws_secret_access_key'))
     parser.set(profile,
                'aws_access_key_id',
                mfa_session['Credentials']['AccessKeyId'])
@@ -181,7 +207,7 @@ def _getcreds(token, duration, profile):
                'aws_secret_access_key',
                mfa_session['Credentials']['SecretAccessKey'])
     parser.set(profile,
-               'aws_security_token',
+               'aws_session_token',
                mfa_session['Credentials']['SessionToken'])
 
     _savecfg(config_file, parser)
@@ -197,7 +223,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='A script to automate getting AWS CLI Multi-Factor \
         Authentication session tokens. \
-        Assumes that you already have ~/.aws/credentials \
+        Assumes that you already have a credentials file (~/.aws/credentials) \
         and ~/.aws/config in place with the correct information configured,\
         and that you have MFA enabled for your IAM user.' )
     parser.add_argument('-t', '--token', type=str, required=True,
