@@ -34,6 +34,9 @@ def _revert_changes(profile, profile_backup, config_file, parser):
         parser.set(profile,
                 'aws_session_token',
                 parser.get(profile_backup, 'aws_session_token'))
+        parser.set(profile,
+                'aws_security_token',
+                parser.get(profile_backup, 'aws_session_token'))
         _savecfg(config_file, parser)
         flush_msg('[\033[92mOK\033[0m]\n')
     sys.exit(1)
@@ -104,6 +107,9 @@ def _getcreds(token, duration, profile):
                     parser.get(profile, 'aws_secret_access_key'))
             parser.set(profile_backup,
                     'aws_session_token',
+                    parser.get(profile, 'aws_session_token'))
+            parser.set(profile_backup,
+                    'aws_security_token',
                     parser.get(profile, 'aws_session_token'))
 
         # Get the profile_permanent section and put it in profile
@@ -208,6 +214,11 @@ def _getcreds(token, duration, profile):
                mfa_session['Credentials']['SecretAccessKey'])
     parser.set(profile,
                'aws_session_token',
+               mfa_session['Credentials']['SessionToken'])
+    # Need to have both session_token and security_token
+    # See: https://github.com/boto/boto/issues/2988
+    parser.set(profile,
+               'aws_security_token',
                mfa_session['Credentials']['SessionToken'])
 
     _savecfg(config_file, parser)
